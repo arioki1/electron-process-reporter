@@ -28,7 +28,7 @@ export interface PidUsage {
   timestamp: number;
 }
 
-export const getAppUsage = (pid: number): Promise<PidUsage[]> => {
+export const getPidUsage = (pid: number): Promise<PidUsage[]> => {
   return pidtree(pid, { root: true })
     .then(pidusage)
     .then((usages: any) => Object.values(usages).filter(Boolean) as PidUsage[]);
@@ -36,7 +36,7 @@ export const getAppUsage = (pid: number): Promise<PidUsage[]> => {
 
 let getSharedProcessMetricsPollerByPid = (pid: number, samplingInterval: number) =>
   Observable.timer(0, samplingInterval)
-    .map(() => Observable.fromPromise(getAppUsage(pid)))
+    .map(() => Observable.fromPromise(getPidUsage(pid)))
     .mergeAll()
     .share();
 
@@ -45,6 +45,8 @@ getSharedProcessMetricsPollerByPid = memoize(getSharedProcessMetricsPollerByPid)
 let getSharedProcessMetricsPollerByApp = (app: Electron.App, samplingInterval: number) =>
   Observable.timer(0, samplingInterval)
     .map(() => app.getAppMetrics())
+    .map((metrics) => Observable.fromPromise(getMemoryMetrics(metrics)))
+    .mergeAll()
     .share();
 
 getSharedProcessMetricsPollerByApp = memoize(getSharedProcessMetricsPollerByApp);
@@ -101,7 +103,23 @@ export interface ExtendedProcessMetric extends Electron.ProcessMetric {
   }[];
 }
 
+export const getMemoryMetrics = (appMetrics: Electron.ProcessMetric[]): Promise<[]> => {
+  const pids = appMetrics.map(proc => proc.pid);
+
+  return pidusage(pids).then((pidInfo: any) => {
+    return appMetrics.map(proc => {
+      return {
+        ...proc,
+        pidusage: pidInfo[proc.pid],
+      };
+    });
+  });
+};
+
 const getExtendedAppMetrics = (appMetrics: Electron.ProcessMetric[]) => {
+  if (webContents === undefined) {
+    return appMetrics;
+  }
   const allWebContents = webContents.getAllWebContents();
   const webContentsInfo = allWebContents.map((wc: overridenWebContents) => ({
     type: wc.getType(),

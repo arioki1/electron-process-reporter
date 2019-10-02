@@ -1,7 +1,7 @@
 import { expect } from 'chai';
 import * as path from 'path';
 import { Application } from 'spectron';
-import { getAppUsage } from '../src';
+import { getMemoryMetrics, getPidUsage } from '../src';
 
 let electronPath = path.resolve(__dirname, '..', 'node_modules', '.bin', 'electron');
 if (process.platform === 'win32') electronPath += '.cmd';
@@ -22,12 +22,12 @@ describe('Application launch', function() {
     }
   });
 
-  it('ensures that extracted pids are the same as those of getAppMetrics', async () => {
+  it('ensures that extracted pids are the same as those of getPidUsage', async () => {
     const metrics = await app.electron.remote.app.getAppMetrics();
     const electronPids = new Set(metrics.map(m => m.pid));
     // Spectron TS definition is 🤢
     const mainPid: number = await (app.mainProcess.pid as any)();
-    return getAppUsage(mainPid).then(pidusages => {
+    return getPidUsage(mainPid).then(pidusages => {
       const pids = new Set(pidusages.map(m => m.pid));
       // Linux and windows can have zygote process
       // which does not appear in getAppMetrics
@@ -46,6 +46,13 @@ describe('Application launch', function() {
         // no zygote process
         expect(pids).to.deep.equal(electronPids);
       }
+    });
+  });
+
+  it('getMemoryMetrics has memory info', async () => {
+    const metrics = await app.electron.remote.app.getAppMetrics();
+    return getMemoryMetrics(metrics).then((data: any) => {
+      expect(data[0].pidusage).to.have.property('memory');
     });
   });
 });
